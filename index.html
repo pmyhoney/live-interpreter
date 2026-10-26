@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>실시간 통역 자막기</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="auth">
+  <form id="authForm">
+    <h2>실시간 통역 자막기</h2>
+    <span class="note">Claude 통역을 쓰려면 로그인해 주세요.</span>
+    <input id="authEmail" type="email" placeholder="이메일" autocomplete="email" required>
+    <input id="authPw" type="password" placeholder="비밀번호 (6자 이상)" autocomplete="current-password" required>
+    <div class="row"><button type="submit" class="primary">로그인</button><button type="button" id="signupBtn">회원가입</button></div>
+    <span class="note" id="authMsg"></span>
+  </form>
+</div>
+
+<header>
+  <h1>실시간 통역 자막기</h1>
+  <div class="group">
+    <div class="dir" title="통역 방향">
+      <span id="srcLbl">EN</span>
+      <button id="swap" aria-label="방향 바꾸기">⇄</button>
+      <span id="tgtLbl">KO</span>
+    </div>
+    <button id="startBtn" class="primary">● 시작</button>
+    <span class="status"><span class="dot" id="dot"></span><span id="clock">00:00:00</span></span>
+  </div>
+  <div class="spacer"></div>
+  <div class="group">
+    <label class="note" for="size">자막 크기</label>
+    <select id="size"><option value="20">작게</option><option value="26" selected>보통</option><option value="34">크게</option><option value="46">아주 크게</option></select>
+    <button id="fsBtn">자막 전체화면</button>
+  </div>
+  <div class="group">
+    <button id="dlTxt" disabled>TXT</button>
+    <button id="dlSrt" disabled>SRT 자막</button>
+    <button id="dlCsv" disabled>CSV</button>
+    <button id="dlAudio" disabled>녹음 파일</button>
+    <button id="clearBtn">화면 지우기</button>
+  </div>
+  <div class="group">
+    <a class="navlink" href="history.html">지난 기록</a>
+    <span class="who" id="who"></span>
+    <button id="logout">로그아웃</button>
+  </div>
+</header>
+
+<main><div class="log" id="log">
+  <div class="empty" id="empty">
+    <b>● 시작</b>을 누르고 마이크를 허용하면 말한 내용이 한 문장씩 Claude가 통역해 자막으로 보여줍니다.<br>
+    통역 기록은 계정에 자동 저장되고(<a href="history.html">지난 기록</a>), TXT·SRT·CSV·녹음 파일을 내려받을 수 있습니다.<br>
+    <span class="note">Chrome 또는 Edge(PC) 권장 · 인터넷 연결 필요</span>
+  </div>
+</div></main>
+
+<div class="live" id="live" aria-live="polite">
+  <div class="lo" id="liveO">대기 중</div>
+  <div class="lt" id="liveT">로그인 확인 중…</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="common.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

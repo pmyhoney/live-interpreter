@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>실시간 통역 자막기</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: 상단 컨트롤 바 → 자막 기록(스크롤) → 하단 고정 라이브 자막 스트립 */
+:root{
+  --bg:#f3f4f6; --panel:#ffffff; --fg:#16181d; --muted:#6b7080; --line:#dfe2e8;
+  --accent:#1f6feb; --accent-ink:#ffffff; --live:#d92d20; --sub-bg:#0f1115; --sub-fg:#ffffff; --sub-tr:#ffd84d;
+  --f-body:"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  --sub-size:26px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0d0f13; --panel:#171a20; --fg:#e8eaef; --muted:#9097a6; --line:#2a2f38;
+  --accent:#4c8dff; --accent-ink:#0d0f13; --live:#ff5a4d; --sub-bg:#000000; --sub-fg:#ffffff; --sub-tr:#ffd84d; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0d0f13; --panel:#171a20; --fg:#e8eaef; --muted:#9097a6; --line:#2a2f38;
+  --accent:#4c8dff; --accent-ink:#0d0f13; --live:#ff5a4d; --sub-bg:#000000; --sub-fg:#ffffff; --sub-tr:#ffd84d; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{overflow-x:hidden;overflow-wrap:anywhere;margin:0;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;display:flex;flex-direction:column}
+header{background:var(--panel);border-bottom:1px solid var(--line);padding:12px 16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+h1{font-size:17px;margin:0 12px 0 0;font-weight:700;letter-spacing:-.01em}
+.group{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.spacer{flex:1}
+button,select{font:inherit;font-size:14px;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:8px;padding:8px 12px;cursor:pointer}
+button:hover{border-color:var(--muted)}
+button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button:disabled{opacity:.45;cursor:not-allowed}
+.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700;min-width:120px}
+.primary.on{background:var(--live);border-color:var(--live);color:#fff}
+.dir{display:flex;align-items:center;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.dir span{padding:8px 12px;font-weight:700;font-family:var(--f-mono);font-size:13px}
+.dir button{border:0;border-left:1px solid var(--line);border-right:1px solid var(--line);border-radius:0;padding:8px 10px}
+.status{font-family:var(--f-mono);font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--line)}
+.dot.rec{background:var(--live);animation:blink 1.2s infinite}
+@keyframes blink{50%{opacity:.3}}
+@media (prefers-reduced-motion:reduce){.dot.rec{animation:none}}
+main{flex:1;overflow-y:auto;padding:16px;min-height:0}
+.log{max-width:900px;margin:0 auto;display:flex;flex-direction:column;gap:10px}
+.seg{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;display:grid;grid-template-columns:auto 1fr;gap:4px 12px}
+.seg .t{font-family:var(--f-mono);font-size:12px;color:var(--muted);padding-top:3px}
+.seg .o{font-size:15px;min-width:0}
+.seg .tr{grid-column:2;font-size:16px;font-weight:500;color:var(--accent);min-width:0}
+.empty{color:var(--muted);text-align:center;padding:40px 16px;line-height:1.7}
+.live{background:var(--sub-bg);color:var(--sub-fg);padding:14px 16px calc(14px + env(safe-area-inset-bottom,0px));min-height:120px;display:flex;flex-direction:column;justify-content:center;gap:6px;text-align:center}
+.live .lo{font-size:calc(var(--sub-size) * .72);opacity:.85;line-height:1.4}
+.live .lt{font-size:var(--sub-size);font-weight:700;color:var(--sub-tr);line-height:1.35;text-wrap:balance}
+.live .interim{opacity:.55;font-style:italic}
+body.fs header,body.fs main{display:none}
+body.fs .live{flex:1}
+.note{font-size:12px;color:var(--muted)}
+@media (max-width:640px){h1{width:100%}.spacer{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>실시간 통역 자막기</h1>
+  <div class="group">
+    <div class="dir" title="통역 방향">
+      <span id="srcLbl">EN</span>
+      <button id="swap" aria-label="방향 바꾸기">⇄</button>
+      <span id="tgtLbl">KO</span>
+    </div>
+    <button id="startBtn" class="primary">● 시작</button>
+    <span class="status"><span class="dot" id="dot"></span><span id="clock">00:00:00</span></span>
+  </div>
+  <div class="spacer"></div>
+  <div class="group">
+    <label class="note" for="size">자막 크기</label>
+    <select id="size"><option value="20">작게</option><option value="26" selected>보통</option><option value="34">크게</option><option value="46">아주 크게</option></select>
+    <button id="fsBtn">자막 전체화면</button>
+  </div>
+  <div class="group">
+    <button id="dlTxt" disabled>TXT</button>
+    <button id="dlSrt" disabled>SRT 자막</button>
+    <button id="dlCsv" disabled>CSV</button>
+    <button id="dlAudio" disabled>녹음 파일</button>
+    <button id="clearBtn">기록 지우기</button>
+  </div>
+</header>
+
+<main><div class="log" id="log">
+  <div class="empty" id="empty">
+    <b>● 시작</b>을 누르고 마이크를 허용하면 말한 내용이 한 문장씩 자막으로 번역됩니다.<br>
+    녹음은 자동으로 진행되고, 끝난 뒤 TXT·SRT·CSV·녹음 파일을 내려받을 수 있습니다.<br>
+    <span class="note">Chrome 또는 Edge(PC) 권장 · 인터넷 연결 필요</span>
+  </div>
+</div></main>
+
+<div class="live" id="live" aria-live="polite">
+  <div class="lo" id="liveO">대기 중</div>
+  <div class="lt" id="liveT">Press start to begin</div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const LANG = { en:{sr:'en-US', code:'en', lbl:'EN'}, ko:{sr:'ko-KR', code:'ko', lbl:'KO'} };
+let src='en', tgt='ko';
+let rec=null, running=false, stream=null, mediaRec=null, chunks=[], audioBlob=null;
+let t0=0, clockTimer=null, segStart=null, segments=[];
+
+function fmt(ms, srt){
+  ms=Math.max(0,ms); const h=Math.floor(ms/3600000), m=Math.floor(ms/60000)%60, s=Math.floor(ms/1000)%60, r=Math.floor(ms%1000);
+  const p=(n,l=2)=>String(n).padStart(l,'0');
+  return `${p(h)}:${p(m)}:${p(s)}` + (srt?`,${p(r,3)}`:'');
+}
+function now(){ return t0 ? performance.now()-t0 : 0; }
+
+function setDir(){
+  $('srcLbl').textContent=LANG[src].lbl; $('tgtLbl').textContent=LANG[tgt].lbl;
+  if(running && rec){ try{rec.stop()}catch(e){} } // onend가 새 언어로 재시작
+}
+$('swap').onclick=()=>{ [src,tgt]=[tgt,src]; setDir(); };
+
+async function translate(text, sl, tl){
+  try{
+    const r=await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&q=${encodeURIComponent(text)}`);
+    if(!r.ok) throw 0; const j=await r.json(); return j[0].map(x=>x[0]).join('');
+  }catch(e){
+    try{
+      const r=await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${sl}|${tl}`);
+      const j=await r.json(); return j.responseData.translatedText;
+    }catch(e2){ return '[번역 실패 – 인터넷 연결 확인]'; }
+  }
+}
+function splitSentences(t){
+  const parts=t.match(/[^.!?。？！]+[.!?。？！]*/g);
+  return (parts||[t]).map(s=>s.trim()).filter(Boolean);
+}
+
+function addSegment(seg){
+  $('empty')?.remove();
+  const d=document.createElement('div'); d.className='seg';
+  d.innerHTML=`<div class="t"></div><div class="o"></div><div class="tr"></div>`;
+  d.querySelector('.t').textContent=fmt(seg.start);
+  d.querySelector('.o').textContent=seg.orig;
+  d.querySelector('.tr').textContent=seg.trans||'…';
+  $('log').appendChild(d); seg.el=d;
+  d.scrollIntoView({block:'end',behavior:'smooth'});
+  updateButtons();
+}
+
+async function handleFinal(text){
+  const start=segStart ?? now(), end=now(); segStart=null;
+  const sentences=splitSentences(text);
+  const span=(end-start)/sentences.length;
+  const sl=LANG[src].code, tl=LANG[tgt].code;
+  for(let i=0;i<sentences.length;i++){
+    const seg={start:start+span*i, end:start+span*(i+1), sl, tl, orig:sentences[i], trans:''};
+    segments.push(seg); addSegment(seg);
+    $('liveO').textContent=seg.orig; $('liveO').classList.remove('interim');
+    translate(seg.orig, sl, tl).then(tr=>{
+      seg.trans=tr; seg.el.querySelector('.tr').textContent=tr;
+      if(segments[segments.length-1]===seg){ $('liveT').textContent=tr; $('liveO').textContent=seg.orig; }
+    });
+  }
+}
+
+function startRecognition(){
+  rec=new SR(); rec.lang=LANG[src].sr; rec.continuous=true; rec.interimResults=true;
+  rec.onresult=e=>{
+    let interim='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const r=e.results[i], txt=r[0].transcript.trim();
+      if(!txt) continue;
+      if(segStart===null) segStart=now();
+      if(r.isFinal) handleFinal(txt); else interim+=txt+' ';
+    }
+    if(interim){ $('liveO').textContent=interim; $('liveO').classList.add('interim'); }
+  };
+  rec.onerror=e=>{
+    if(e.error==='not-allowed'||e.error==='service-not-allowed'){ alertMsg('음성 인식 권한이 거부되었습니다. 주소창 왼쪽 아이콘에서 마이크를 "허용"으로 바꾸고 새로고침해 주세요. 회사 PC에서는 음성 인식 서비스가 막혀 있을 수 있습니다.'); stop(); }
+    else if(e.error==='network'){ alertMsg('음성 인식 서버에 연결하지 못했습니다. 인터넷 연결이나 회사 방화벽을 확인해 주세요.'); stop(); }
+    else if(e.error==='audio-capture'){ alertMsg('마이크 입력을 받지 못했습니다. 마이크 연결을 확인해 주세요.'); stop(); }
+  };
+  rec.onend=()=>{ if(running) setTimeout(()=>{ if(running) startRecognition(); },200); };
+  try{ rec.start(); }catch(e){}
+}
+
+function alertMsg(m){ $('liveO').textContent=m; $('liveT').textContent=''; }
+
+async function start(){
+  if(window.self!==window.top){ alertMsg('미리보기 창에서는 마이크를 쓸 수 없습니다. 파일을 내려받아 Chrome 또는 Edge로 직접 열어 주세요.'); return; }
+  if(!window.isSecureContext||/^content:/.test(location.protocol)){ alertMsg('파일을 직접 열면 브라우저가 보안상 마이크를 막습니다(특히 휴대폰). https 주소로 올린 페이지에서 열어 주세요.'); return; }
+  if(!SR){ alertMsg('이 브라우저는 음성 인식을 지원하지 않습니다. PC의 Chrome 또는 Edge에서 열어 주세요.'); return; }
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){ alertMsg('이 방식으로 연 페이지에서는 마이크를 쓸 수 없습니다. 파일을 Chrome 창으로 끌어다 놓아 열어 주세요.'); return; }
+  try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }
+  catch(e){
+    const msg={
+      NotAllowedError:'마이크 권한이 차단되어 있습니다. ① 주소창 왼쪽 아이콘 → 마이크 "허용" ② Windows 설정 → 개인 정보 → 마이크 → "데스크톱 앱의 마이크 액세스 허용" 켜기 후 새로고침해 주세요.',
+      NotFoundError:'연결된 마이크를 찾지 못했습니다. 마이크나 헤드셋이 연결되어 있는지 확인해 주세요.',
+      NotReadableError:'다른 프로그램(Teams, Zoom 등)이 마이크를 쓰고 있습니다. 그 프로그램을 닫고 다시 시도해 주세요.',
+      SecurityError:'보안 정책 때문에 마이크가 막혀 있습니다. 회사 PC라면 IT팀 정책일 수 있습니다.'
+    }[e.name]||`마이크를 열 수 없습니다 (${e.name}).`;
+    alertMsg(msg); return;
+  }
+  running=true; chunks=[]; audioBlob=null;
+  if(!t0 || segments.length===0) t0=performance.now();
+  const mime=['audio/webm;codecs=opus','audio/webm','audio/mp4'].find(m=>window.MediaRecorder&&MediaRecorder.isTypeSupported(m));
+  mediaRec=new MediaRecorder(stream, mime?{mimeType:mime}:undefined);
+  mediaRec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
+  mediaRec.onstop=()=>{ audioBlob=new Blob(chunks,{type:mediaRec.mimeType||'audio/webm'}); updateButtons(); };
+  mediaRec.start(1000);
+  startRecognition();
+  $('startBtn').textContent='■ 정지'; $('startBtn').classList.add('on'); $('dot').classList.add('rec');
+  $('liveO').textContent='듣는 중…'; $('liveT').textContent='';
+  clockTimer=setInterval(()=>$('clock').textContent=fmt(now()),500);
+}
+function stop(){
+  running=false;
+  try{rec&&rec.stop()}catch(e){}
+  try{mediaRec&&mediaRec.state!=='inactive'&&mediaRec.stop()}catch(e){}
+  stream&&stream.getTracks().forEach(t=>t.stop());
+  clearInterval(clockTimer);
+  $('startBtn').textContent='● 시작'; $('startBtn').classList.remove('on'); $('dot').classList.remove('rec');
+}
+$('startBtn').onclick=()=> running?stop():start();
+
+/* 다운로드 */
+function stamp(){ const d=new Date(); const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`; }
+function save(blob,name){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000); }
+const BOM='﻿';
+$('dlTxt').onclick=()=>{
+  const t=segments.map(s=>`[${fmt(s.start)}] (${s.sl.toUpperCase()}) ${s.orig}\n           (${s.tl.toUpperCase()}) ${s.trans}`).join('\n\n');
+  save(new Blob([BOM+`실시간 통역 기록 ${new Date().toLocaleString('ko-KR')}\n\n`+t],{type:'text/plain;charset=utf-8'}),`통역기록_${stamp()}.txt`);
+};
+$('dlSrt').onclick=()=>{
+  const t=segments.map((s,i)=>`${i+1}\n${fmt(s.start,1)} --> ${fmt(Math.max(s.end,s.start+1500),1)}\n${s.orig}\n${s.trans}\n`).join('\n');
+  save(new Blob([BOM+t],{type:'text/plain;charset=utf-8'}),`통역자막_${stamp()}.srt`);
+};
+$('dlCsv').onclick=()=>{
+  const q=v=>`"${String(v).replace(/"/g,'""')}"`;
+  const rows=[['시작','종료','원문 언어','원문','번역 언어','번역']].concat(segments.map(s=>[fmt(s.start),fmt(s.end),s.sl,s.orig,s.tl,s.trans]));
+  save(new Blob([BOM+rows.map(r=>r.map(q).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}),`통역기록_${stamp()}.csv`);
+};
+$('dlAudio').onclick=()=>{ if(audioBlob) save(audioBlob,`통역녹음_${stamp()}.${audioBlob.type.includes('mp4')?'m4a':'webm'}`); };
+
+function updateButtons(){
+  const has=segments.length>0;
+  ['dlTxt','dlSrt','dlCsv'].forEach(id=>$(id).disabled=!has);
+  $('dlAudio').disabled=!audioBlob;
+}
+
+/* 기타 */
+let clearArmed=false;
+$('clearBtn').onclick=()=>{
+  if(!clearArmed){ clearArmed=true; $('clearBtn').textContent='한 번 더 누르면 삭제'; setTimeout(()=>{clearArmed=false;$('clearBtn').textContent='기록 지우기';},3000); return; }
+  clearArmed=false; $('clearBtn').textContent='기록 지우기';
+  segments=[]; $('log').innerHTML=''; if(!running){ t0=0; $('clock').textContent='00:00:00'; } updateButtons();
+};
+$('size').onchange=e=>document.documentElement.style.setProperty('--sub-size',e.target.value+'px');
+$('fsBtn').onclick=()=>{ document.body.classList.add('fs'); document.documentElement.requestFullscreen?.().catch(()=>{}); };
+$('live').ondblclick=()=>{ document.body.classList.remove('fs'); if(document.fullscreenElement) document.exitFullscreen(); };
+document.addEventListener('fullscreenchange',()=>{ if(!document.fullscreenElement) document.body.classList.remove('fs'); });
+window.addEventListener('beforeunload',e=>{ if(segments.length){ e.preventDefault(); e.returnValue=''; } });
+</script>
+</body>
+</html>

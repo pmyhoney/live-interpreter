@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>지난 통역 기록</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="auth">
+  <form id="authForm">
+    <h2>지난 통역 기록</h2>
+    <input id="authEmail" type="email" placeholder="이메일" autocomplete="email" required>
+    <input id="authPw" type="password" placeholder="비밀번호" autocomplete="current-password" required>
+    <div class="row"><button type="submit" class="primary">로그인</button><button type="button" id="signupBtn">회원가입</button></div>
+    <span class="note" id="authMsg"></span>
+  </form>
+</div>
+
+<header>
+  <h1>지난 통역 기록</h1>
+  <a class="navlink" href="index.html">← 통역하기</a>
+  <div class="spacer"></div>
+  <div class="group">
+    <span class="who" id="who"></span>
+    <button id="logout">로그아웃</button>
+  </div>
+</header>
+
+<main><div class="log" id="log"><div class="empty">불러오는 중…</div></div></main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="common.js"></script>
+<script>
+const log=$('log');
+function el(tag, cls, text){ const e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e; }
+
+async function showList(){
+  log.innerHTML='';
+  const {data,error}=await sb.from('sessions').select('id,title,src,tgt,started_at,ended_at,segments(count)').order('started_at',{ascending:false}).limit(200);
+  if(error){ log.append(el('div','empty','기록을 불러오지 못했습니다: '+error.message)); return; }
+  if(!data.length){ log.append(el('div','empty','아직 저장된 통역 기록이 없습니다.')); return; }
+  for(const s of data){
+    const b=el('button','sess');
+    b.append(el('span','ttl',s.title||'통역'), el('span','meta',`${s.src.toUpperCase()}→${s.tgt.toUpperCase()} · ${s.segments[0]?.count??0}문장`));
+    b.onclick=()=>showSession(s);
+    log.append(b);
+  }
+}
+
+async function showSession(s){
+  log.innerHTML='';
+  const {data,error}=await sb.from('segments').select('start_ms,end_ms,sl,tl,orig,trans').eq('session_id',s.id).order('start_ms');
+  if(error){ log.append(el('div','empty','불러오기 실패: '+error.message)); return; }
+  const segs=data.map(r=>({start:r.start_ms,end:r.end_ms,sl:r.sl,tl:r.tl,orig:r.orig,trans:r.trans}));
+  const when=new Date(s.started_at);
+  const head=el('div','detail-head');
+  const back=el('button',null,'← 목록'); back.onclick=showList;
+  const mk=(t,f)=>{ const b=el('button',null,t); b.disabled=!segs.length; b.onclick=()=>f(segs,when); return b; };
+  const del=el('button',null,'삭제');
+  del.onclick=async()=>{
+    if(del.dataset.armed){ await sb.from('sessions').delete().eq('id',s.id); showList(); return; }
+    del.dataset.armed=1; del.textContent='한 번 더 누르면 삭제';
+  };
+  head.append(back, el('h2',null,s.title||'통역'), mk('TXT',exportTxt), mk('SRT 자막',exportSrt), mk('CSV',exportCsv), del);
+  log.append(head);
+  if(!segs.length) log.append(el('div','empty','저장된 문장이 없습니다.'));
+  for(const g of segs){
+    const d=el('div','seg');
+    d.append(el('div','t',fmt(g.start)), el('div','o',g.orig), el('div','tr',g.trans));
+    log.append(d);
+  }
+}
+
+requireLogin(showList);
+</script>
+</body>
+</html>
