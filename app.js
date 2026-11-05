@@ -4,6 +4,10 @@ let src='en', tgt='ko';
 let rec=null, running=false, stream=null, mediaRec=null, chunks=[], audioBlob=null;
 let t0=0, clockTimer=null, segStart=null, segments=[];
 let sessionId=null, sessionAt=null;
+// 안드로이드는 음성 인식을 시스템(Google 앱) 서비스가 처리하는데, 페이지가 녹음용으로 마이크를 잡고 있으면
+// 인식 서비스가 마이크를 못 써서 'network' 오류가 난다 → 안드로이드에서는 녹음하지 않는다.
+const ANDROID=/Android/i.test(navigator.userAgent);
+let netErrors=0;
 
 function now(){ return t0 ? performance.now()-t0 : 0; }
 
@@ -88,6 +92,7 @@ function startRecognition(){
     for(let i=e.resultIndex;i<e.results.length;i++){
       const r=e.results[i], txt=r[0].transcript.trim();
       if(!txt) continue;
+      netErrors=0;
       if(segStart===null) segStart=now();
       if(r.isFinal) handleFinal(txt); else interim+=txt+' ';
     }
@@ -95,7 +100,13 @@ function startRecognition(){
   };
   rec.onerror=e=>{
     if(e.error==='not-allowed'||e.error==='service-not-allowed'){ alertMsg('음성 인식 권한이 거부되었습니다. 주소창 왼쪽 아이콘에서 마이크를 "허용"으로 바꾸고 새로고침해 주세요. 회사 PC에서는 음성 인식 서비스가 막혀 있을 수 있습니다.'); stop(); }
-    else if(e.error==='network'){ alertMsg('음성 인식 서버에 연결하지 못했습니다. 인터넷 연결이나 회사 방화벽을 확인해 주세요.'); stop(); }
+    else if(e.error==='network'){
+      if(++netErrors<=2) return; // 일시적 오류는 onend에서 자동 재시작
+      alertMsg(ANDROID
+        ? '음성 인식 서비스에 연결하지 못했습니다. ① Play 스토어에서 "Google" 앱을 최신으로 업데이트하고 사용 중지 상태가 아닌지 확인 ② 설정 → 일반 → 키보드/음성 입력 → 기본 음성 인식을 "Google"로 설정 ③ 다른 앱(통화·녹음·음성비서)이 마이크를 쓰고 있지 않은지 확인해 주세요.'
+        : '음성 인식 서버에 연결하지 못했습니다. 인터넷 연결이나 회사 방화벽을 확인해 주세요.');
+      stop();
+    }
     else if(e.error==='audio-capture'){ alertMsg('마이크 입력을 받지 못했습니다. 마이크 연결을 확인해 주세요.'); stop(); }
   };
   rec.onend=()=>{ if(running) setTimeout(()=>{ if(running) startRecognition(); },200); };
@@ -119,14 +130,20 @@ async function start(){
     }[e.name]||`마이크를 열 수 없습니다 (${e.name}).`;
     alertMsg(msg); return;
   }
-  running=true; chunks=[]; audioBlob=null;
+  running=true; chunks=[]; audioBlob=null; netErrors=0;
   if(!t0 || segments.length===0) t0=performance.now();
   ensureSession();
-  const mime=['audio/webm;codecs=opus','audio/webm','audio/mp4'].find(m=>window.MediaRecorder&&MediaRecorder.isTypeSupported(m));
-  mediaRec=new MediaRecorder(stream, mime?{mimeType:mime}:undefined);
-  mediaRec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
-  mediaRec.onstop=()=>{ audioBlob=new Blob(chunks,{type:mediaRec.mimeType||'audio/webm'}); updateButtons(); };
-  mediaRec.start(1000);
+  if(ANDROID){
+    // 권한 확인만 하고 마이크는 음성 인식 서비스에 넘긴다
+    stream.getTracks().forEach(t=>t.stop()); stream=null; mediaRec=null;
+    $('dlAudio').title='안드로이드에서는 음성 인식과 녹음을 동시에 할 수 없어 녹음 파일을 지원하지 않습니다';
+  }else{
+    const mime=['audio/webm;codecs=opus','audio/webm','audio/mp4'].find(m=>window.MediaRecorder&&MediaRecorder.isTypeSupported(m));
+    mediaRec=new MediaRecorder(stream, mime?{mimeType:mime}:undefined);
+    mediaRec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
+    mediaRec.onstop=()=>{ audioBlob=new Blob(chunks,{type:mediaRec.mimeType||'audio/webm'}); updateButtons(); };
+    mediaRec.start(1000);
+  }
   startRecognition();
   $('startBtn').textContent='■ 정지'; $('startBtn').classList.add('on'); $('dot').classList.add('rec');
   $('liveO').textContent='듣는 중…'; $('liveT').textContent='';
