@@ -32,7 +32,46 @@ function requireLogin(onReady){
     if(data.session) enter(data.user); else msg('확인 메일을 보냈습니다. 메일의 링크를 누른 뒤 로그인해 주세요.');
   };
   $('logout').onclick=async()=>{ await sb.auth.signOut(); location.reload(); };
-  sb.auth.getSession().then(({data})=>{ if(data.session) enter(data.session.user); else show(true); });
+
+  /* 비밀번호 재설정: 메일 요청 → 메일 링크로 돌아오면 새 비밀번호 입력 */
+  const forgot=document.createElement('button');
+  forgot.type='button'; forgot.className='linkbtn'; forgot.textContent='비밀번호를 잊으셨나요?';
+  $('authMsg').before(forgot);
+  forgot.onclick=async()=>{
+    const email=$('authEmail').value.trim();
+    if(!email) return msg('이메일을 입력한 뒤 다시 눌러 주세요.');
+    msg('재설정 메일 보내는 중…');
+    const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});
+    msg(error?(/rate limit/i.test(error.message)?'메일을 너무 자주 요청했습니다. 잠시 후 다시 시도해 주세요.':error.message)
+             :'재설정 메일을 보냈습니다. 메일의 링크를 눌러 새 비밀번호를 정해 주세요.');
+  };
+  const resetForm=document.createElement('form');
+  resetForm.id='resetForm'; resetForm.hidden=true;
+  resetForm.innerHTML=`<h2>새 비밀번호 설정</h2>
+    <input id="newPw" type="password" placeholder="새 비밀번호 (6자 이상)" autocomplete="new-password" required minlength="6">
+    <input id="newPw2" type="password" placeholder="새 비밀번호 확인" autocomplete="new-password" required minlength="6">
+    <button type="submit" class="primary">비밀번호 변경</button>
+    <span class="note" id="resetMsg"></span>`;
+  $('auth').append(resetForm);
+  const recovering=/type=recovery/.test(location.hash);
+  const showReset=()=>{ show(true); $('authForm').hidden=true; resetForm.hidden=false; $('newPw').focus(); };
+  resetForm.onsubmit=async e=>{
+    e.preventDefault();
+    const pw=$('newPw').value;
+    if(pw!==$('newPw2').value) return $('resetMsg').textContent='두 비밀번호가 다릅니다.';
+    $('resetMsg').textContent='변경 중…';
+    const {data,error}=await sb.auth.updateUser({password:pw});
+    if(error) return $('resetMsg').textContent=error.message;
+    history.replaceState(null,'',location.pathname);
+    resetForm.hidden=true; $('authForm').hidden=false;
+    enter(data.user);
+  };
+  sb.auth.onAuthStateChange(ev=>{ if(ev==='PASSWORD_RECOVERY') showReset(); });
+
+  sb.auth.getSession().then(({data})=>{
+    if(recovering && data.session) showReset();
+    else if(data.session) enter(data.session.user); else show(true);
+  });
 }
 
 /* 내보내기 */

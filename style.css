@@ -66,3 +66,8 @@ body.locked #auth{display:flex}
 .sess .meta{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
 .detail-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px}
 .detail-head h2{font-size:16px;margin:0;flex:1;min-width:0}
+#resetForm{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:24px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:10px}
+#resetForm[hidden],#authForm[hidden]{display:none}
+#resetForm h2{margin:0 0 6px;font-size:18px}
+#resetForm input{font:inherit;border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:8px;padding:10px 12px}
+.linkbtn{border:0;background:none;color:var(--accent);padding:2px 0;font-size:13px;align-self:flex-start;text-decoration:underline}
