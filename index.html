@@ -6,7 +6,7 @@
 <title>실시간 통역 자막기</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=20261106">
 </head>
 <body>
 <div id="auth">
@@ -32,19 +32,19 @@
     <span class="status"><span class="dot" id="dot"></span><span id="clock">00:00:00</span></span>
   </div>
   <div class="spacer"></div>
-  <div class="group">
+  <div class="group aux">
     <label class="note" for="size">자막 크기</label>
     <select id="size"><option value="20">작게</option><option value="26" selected>보통</option><option value="34">크게</option><option value="46">아주 크게</option></select>
     <button id="fsBtn">자막 전체화면</button>
   </div>
-  <div class="group">
+  <div class="group aux">
     <button id="dlTxt" disabled>TXT</button>
     <button id="dlSrt" disabled>SRT 자막</button>
     <button id="dlCsv" disabled>CSV</button>
     <button id="dlAudio" disabled>녹음 파일</button>
     <button id="clearBtn">화면 지우기</button>
   </div>
-  <div class="group">
+  <div class="group aux">
     <a class="navlink" href="history.html">지난 기록</a>
     <span class="who" id="who"></span>
     <button id="logout">로그아웃</button>
@@ -66,7 +66,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
-<script src="common.js"></script>
-<script src="app.js"></script>
+<script src="common.js?v=20261106"></script>
+<script src="app.js?v=20261106"></script>
 </body>
 </html>

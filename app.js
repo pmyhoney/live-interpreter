@@ -6,8 +6,11 @@ let t0=0, clockTimer=null, segStart=null, segments=[];
 let sessionId=null, sessionAt=null;
 // 안드로이드는 음성 인식을 시스템(Google 앱) 서비스가 처리하는데, 페이지가 녹음용으로 마이크를 잡고 있으면
 // 인식 서비스가 마이크를 못 써서 'network' 오류가 난다 → 안드로이드에서는 녹음하지 않는다.
-const ANDROID=/Android/i.test(navigator.userAgent);
-let netErrors=0;
+// Chrome의 '데스크톱 사이트' 모드는 UA에서 Android를 지우므로, 터치 가능한 Linux도 안드로이드로 본다.
+const ANDROID=/Android/i.test(navigator.userAgent)
+  || (navigator.maxTouchPoints>1 && /Linux/i.test(navigator.platform||navigator.userAgent));
+const BUILD='20261106';
+let netErrors=0, speaking=false;
 
 function now(){ return t0 ? performance.now()-t0 : 0; }
 
@@ -72,21 +75,23 @@ async function handleFinal(text){
   for(let i=0;i<sentences.length;i++){
     const seg={start:start+span*i, end:start+span*(i+1), sl, tl, orig:sentences[i], trans:'', done:false};
     segments.push(seg); addSegment(seg);
-    $('liveO').textContent=seg.orig; $('liveO').classList.remove('interim');
+    // 원문과 번역이 항상 같은 문장끼리 짝이 되도록 이전 번역을 지운다
+    $('liveO').textContent=seg.orig; $('liveO').classList.remove('interim'); $('liveT').textContent='…';
     const isLatest=()=>segments[segments.length-1]===seg;
     translate(seg.orig, sl, tl, partial=>{
       seg.el.querySelector('.tr').textContent=partial;
       if(isLatest()) $('liveT').textContent=partial;
     }).then(tr=>{
       seg.trans=tr; seg.done=true; seg.el.querySelector('.tr').textContent=tr;
-      if(isLatest()){ $('liveT').textContent=tr; $('liveO').textContent=seg.orig; }
+      if(isLatest()){ $('liveT').textContent=tr; if(!speaking) $('liveO').textContent=seg.orig; }
       saveSegment(seg);
     });
   }
 }
 
 function startRecognition(){
-  rec=new SR(); rec.lang=LANG[src].sr; rec.continuous=true; rec.interimResults=true;
+  // 안드로이드의 연속 모드는 결과가 중복되므로, 한 문장을 듣고 끝낸 뒤 onend에서 다시 시작한다
+  rec=new SR(); rec.lang=LANG[src].sr; rec.continuous=!ANDROID; rec.interimResults=true;
   rec.onresult=e=>{
     let interim='';
     for(let i=e.resultIndex;i<e.results.length;i++){
@@ -96,6 +101,7 @@ function startRecognition(){
       if(segStart===null) segStart=now();
       if(r.isFinal) handleFinal(txt); else interim+=txt+' ';
     }
+    speaking=!!interim;
     if(interim){ $('liveO').textContent=interim; $('liveO').classList.add('interim'); }
   };
   rec.onerror=e=>{
@@ -105,6 +111,7 @@ function startRecognition(){
       alertMsg(ANDROID
         ? '음성 인식 서비스에 연결하지 못했습니다. ① Play 스토어에서 "Google" 앱을 최신으로 업데이트하고 사용 중지 상태가 아닌지 확인 ② 설정 → 일반 → 키보드/음성 입력 → 기본 음성 인식을 "Google"로 설정 ③ 다른 앱(통화·녹음·음성비서)이 마이크를 쓰고 있지 않은지 확인해 주세요.'
         : '음성 인식 서버에 연결하지 못했습니다. 인터넷 연결이나 회사 방화벽을 확인해 주세요.');
+      $('liveT').textContent=`오류 코드: network · ${ANDROID?'Android':'PC/기타'} · 빌드 ${BUILD}`;
       stop();
     }
     else if(e.error==='audio-capture'){ alertMsg('마이크 입력을 받지 못했습니다. 마이크 연결을 확인해 주세요.'); stop(); }
@@ -130,12 +137,14 @@ async function start(){
     }[e.name]||`마이크를 열 수 없습니다 (${e.name}).`;
     alertMsg(msg); return;
   }
-  running=true; chunks=[]; audioBlob=null; netErrors=0;
+  running=true; chunks=[]; audioBlob=null; netErrors=0; speaking=false;
+  document.body.classList.add('running');
   if(!t0 || segments.length===0) t0=performance.now();
   ensureSession();
   if(ANDROID){
     // 권한 확인만 하고 마이크는 음성 인식 서비스에 넘긴다
     stream.getTracks().forEach(t=>t.stop()); stream=null; mediaRec=null;
+    await new Promise(r=>setTimeout(r,400)); // 마이크가 완전히 풀린 뒤 인식 시작
     $('dlAudio').title='안드로이드에서는 음성 인식과 녹음을 동시에 할 수 없어 녹음 파일을 지원하지 않습니다';
   }else{
     const mime=['audio/webm;codecs=opus','audio/webm','audio/mp4'].find(m=>window.MediaRecorder&&MediaRecorder.isTypeSupported(m));
@@ -150,7 +159,8 @@ async function start(){
   clockTimer=setInterval(()=>$('clock').textContent=fmt(now()),500);
 }
 function stop(){
-  running=false;
+  running=false; speaking=false;
+  document.body.classList.remove('running');
   try{rec&&rec.stop()}catch(e){}
   try{mediaRec&&mediaRec.state!=='inactive'&&mediaRec.stop()}catch(e){}
   stream&&stream.getTracks().forEach(t=>t.stop());
